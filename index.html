@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>ToiletRequest — facility issue reporting</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  :root {
+    --navy:#021826; --panel-dark:#0F2A33; --teal:#028090; --seafoam:#00A896; --mint:#02C39A;
+    --amber:#C97A1E; --red:#C74B3E; --blue:#2D6FB0;
+    --ink:#12242B; --muted:#55696E; --paper:#F5F8F8; --paper-2:#EAF1F1; --white:#FFFFFF; --line:#DCE6E6;
+    box-sizing:border-box; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --paper:#0B1B22; --paper-2:#0F252D; --ink:#EAF2F2; --muted:#9FB8BC; --line:#1E3840; --white:#10272F; }
+  }
+  * { box-sizing:border-box; }
+  html { scroll-padding-top: env(safe-area-inset-top,0px); }
+  body { margin:0; background:var(--paper); color:var(--ink); font-family:'Inter',Arial,sans-serif; font-size:16px; line-height:1.5; -webkit-font-smoothing:antialiased; }
+  h1,h2,h3 { font-family:'Space Grotesk',Arial,sans-serif; margin:0; letter-spacing:-0.01em; }
+  button { font-family:inherit; }
+  .wrap { max-width: 900px; margin:0 auto; padding:0 20px; }
+  *:focus-visible { outline:3px solid var(--teal); outline-offset:2px; border-radius:4px; }
+
+  /* ---- App bar ---- */
+  .appbar { position:sticky; top:0; z-index:30; padding-top:env(safe-area-inset-top,0px); background:color-mix(in srgb, var(--paper) 90%, transparent); backdrop-filter:blur(10px); border-bottom:1px solid var(--line); }
+  .appbar-inner { display:flex; align-items:center; justify-content:space-between; height:62px; gap:12px; }
+  .brand { display:flex; align-items:center; gap:9px; font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:17px; }
+  .brand-mark { width:28px; height:28px; border-radius:8px; background:var(--teal); flex-shrink:0; }
+  .signout-btn { border:1px solid var(--line); background:var(--white); border-radius:8px; padding:6px 10px; font-size:12.5px; font-weight:600; cursor:pointer; color:var(--muted); }
+
+  /* ---- Banners ---- */
+  .banner { padding:10px 20px; font-size:13.5px; font-weight:600; text-align:center; }
+  .banner.error { background:#F8DEDA; color:#8C2E22; }
+  .banner a { text-decoration:underline; }
+
+  /* ---- Tab bar ---- */
+  .tabbar { position:sticky; top:62px; z-index:25; background:var(--paper-2); border-bottom:1px solid var(--line); }
+  .tabbar-inner { display:flex; gap:4px; padding:8px 20px; overflow-x:auto; }
+  .tab { position:relative; padding:9px 16px; border-radius:999px; border:1px solid var(--line); background:var(--white); font-size:13.5px; font-weight:700; color:var(--muted); cursor:pointer; white-space:nowrap; }
+  .tab[aria-current="true"] { background:var(--navy); color:#fff; border-color:var(--navy); }
+  .tab-badge { display:inline-flex; align-items:center; justify-content:center; min-width:17px; height:17px; padding:0 5px; margin-left:6px; border-radius:999px; background:var(--red); color:#fff; font-size:10.5px; font-weight:700; }
+
+  main { min-height:60vh; padding:28px 0 60px; }
+
+  /* ---- Generic ---- */
+  .btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; padding:14px 22px; border-radius:12px; font-weight:700; font-size:15px; border:1px solid transparent; cursor:pointer; text-decoration:none; }
+  .btn-primary { background:var(--teal); color:#fff; }
+  .btn-primary:hover { background:#026e7c; }
+  .btn-primary:disabled { background:var(--line); color:var(--muted); cursor:not-allowed; }
+  .btn-ghost { background:transparent; border-color:var(--line); color:var(--ink); }
+  .btn-ghost:hover { border-color:var(--teal); }
+  .btn-danger { background:var(--red); color:#fff; }
+  .btn-block { width:100%; }
+  .card { background:var(--white); border:1px solid var(--line); border-radius:16px; padding:22px; }
+  .muted { color:var(--muted); }
+  .center { text-align:center; }
+  .stack { display:flex; flex-direction:column; gap:14px; }
+  .section-title { font-size:22px; font-weight:700; margin-bottom:6px; }
+  .section-sub { color:var(--muted); font-size:14.5px; margin-bottom:22px; }
+
+  /* ---- Visitor ---- */
+  .visitor-card { max-width:480px; margin:0 auto; }
+  .location-chip { display:inline-block; background:var(--navy); color:#fff; padding:8px 16px; border-radius:999px; font-weight:700; font-size:14px; margin-bottom:22px; }
+  .issue-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:22px; }
+  .issue-btn { padding:22px 12px; border-radius:16px; border:2px solid var(--line); background:var(--white); font-weight:700; font-size:15px; cursor:pointer; text-align:center; min-height:92px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; }
+  .issue-btn .emoji { font-size:28px; }
+  .issue-btn:hover { border-color:var(--teal); }
+  .issue-btn.is-selected { border-color:var(--teal); background:color-mix(in srgb, var(--teal) 10%, var(--white)); color:var(--teal); }
+  .status-badge { display:inline-flex; align-items:center; gap:6px; padding:6px 14px; border-radius:999px; font-size:13px; font-weight:700; }
+  .status-badge::before { content:""; width:8px; height:8px; border-radius:50%; }
+  .status-New { background:color-mix(in srgb, var(--red) 14%, transparent); color:var(--red); } .status-New::before{background:var(--red);}
+  .status-Acknowledged { background:color-mix(in srgb, var(--blue) 14%, transparent); color:var(--blue); } .status-Acknowledged::before{background:var(--blue);}
+  .status-Onmyway { background:color-mix(in srgb, var(--amber) 16%, transparent); color:var(--amber); } .status-Onmyway::before{background:var(--amber);}
+  .status-Resolved { background:color-mix(in srgb, var(--mint) 16%, transparent); color:#04785f; } .status-Resolved::before{background:var(--mint);}
+  .timeline { list-style:none; padding:0; margin:16px 0 0; display:flex; flex-direction:column; gap:8px; }
+  .timeline li { font-size:14px; padding-left:20px; position:relative; color:var(--muted); }
+  .timeline li::before { content:"✓"; position:absolute; left:0; color:var(--mint); font-weight:700; }
+
+  /* ---- Cleaner cards ---- */
+  .req-card { border:2px solid var(--line); border-radius:18px; padding:20px; background:var(--white); }
+  .req-card.is-new { border-color:var(--red); }
+  .req-card .top-row { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:10px; }
+  .req-card .issue-name { font-size:19px; font-weight:700; }
+  .req-card .loc-name { color:var(--muted); font-size:14.5px; margin-top:2px; }
+  .req-card .time-line { color:var(--muted); font-size:13px; margin-top:10px; }
+  .big-action-btn { width:100%; margin-top:16px; padding:18px; font-size:17px; border-radius:14px; }
+  .empty-state { text-align:center; padding:50px 20px; color:var(--muted); }
+  .notif-btn { display:inline-flex; align-items:center; gap:6px; font-size:12.5px; font-weight:700; color:var(--teal); background:none; border:none; cursor:pointer; padding:0; margin-bottom:16px; }
+
+  /* ---- Management ---- */
+  .grid-4 { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
+  @media (max-width:700px) { .grid-4 { grid-template-columns:repeat(2,1fr); } }
+  .stat-mini { background:var(--paper-2); border-radius:14px; padding:18px; text-align:center; }
+  .stat-mini .num { font-family:'Space Grotesk',sans-serif; font-size:30px; font-weight:700; color:var(--teal); }
+  .stat-mini .lbl { font-size:12.5px; font-weight:600; color:var(--muted); margin-top:4px; }
+  .list-row { display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--line); font-size:14.5px; }
+  .list-row:last-child { border-bottom:none; }
+
+  /* ---- Auth ---- */
+  .auth-card { max-width:380px; margin:40px auto; text-align:center; }
+  .auth-card input { width:100%; padding:14px; border-radius:10px; border:1.5px solid var(--line); font-size:15px; margin:14px 0; background:var(--paper); color:var(--ink); }
+  .auth-msg { font-size:13.5px; color:var(--muted); margin-top:10px; min-height:18px; }
+
+  /* ---- Setup ---- */
+  .loc-row { display:flex; align-items:center; gap:16px; padding:16px 0; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  .loc-row:last-child { border-bottom:none; }
+  .loc-qr { width:96px; height:96px; background:#fff; border-radius:10px; padding:6px; flex-shrink:0; }
+  .loc-info { flex:1; min-width:180px; }
+  .loc-info .name { font-weight:700; }
+  .loc-info .link { font-size:12px; color:var(--muted); word-break:break-all; }
+  ol.setup-steps { padding-left:20px; }
+  ol.setup-steps li { margin-bottom:10px; font-size:14.5px; }
+  code { background:var(--paper-2); padding:2px 6px; border-radius:5px; font-size:13px; }
+
+  /* ---- Toast / modal ---- */
+  .toast-root { position:fixed; bottom:calc(18px + env(safe-area-inset-bottom,0px)); left:50%; transform:translateX(-50%); z-index:200; display:flex; flex-direction:column; gap:10px; width:min(360px,92vw); }
+  .toast { background:var(--navy); color:#fff; padding:14px 18px; border-radius:12px; font-size:13.5px; box-shadow:0 16px 40px -12px rgba(0,0,0,.5); animation:toast-in .18s ease-out; }
+  @keyframes toast-in { from{opacity:0; transform:translateY(10px);} to{opacity:1; transform:translateY(0);} }
+  .modal-backdrop { position:fixed; inset:0; background:rgba(2,24,38,.55); z-index:100; display:flex; align-items:center; justify-content:center; padding:20px; }
+  .modal-backdrop[hidden] { display:none; }
+  .modal { background:var(--white); border-radius:20px; padding:30px; max-width:420px; width:100%; max-height:86vh; overflow-y:auto; position:relative; }
+  .modal-close { position:absolute; top:12px; right:12px; width:32px; height:32px; border-radius:50%; border:1px solid var(--line); background:var(--paper); cursor:pointer; }
+
+  footer { padding:30px 0 calc(30px + env(safe-area-inset-bottom,0px)); border-top:1px solid var(--line); text-align:center; color:var(--muted); font-size:12.5px; }
+</style>
+</head>
+<body>
+
+<header class="appbar">
+  <div class="wrap appbar-inner">
+    <div class="brand"><span class="brand-mark"></span>ToiletRequest</div>
+    <div style="display:flex; align-items:center; gap:10px;">
+      <span id="signoutSlot"></span>
+    </div>
+  </div>
+</header>
+
+<div id="modeBanner"></div>
+
+<nav class="tabbar">
+  <div class="wrap tabbar-inner">
+    <button type="button" class="tab" data-action="switch-tab" data-tab="visitor">Visitor</button>
+    <button type="button" class="tab" data-action="switch-tab" data-tab="cleaner">Cleaner<span class="tab-badge" id="cleanerBadge" hidden>0</span></button>
+    <button type="button" class="tab" data-action="switch-tab" data-tab="management">Management</button>
+    <button type="button" class="tab" data-action="switch-tab" data-tab="setup">Setup</button>
+  </div>
+</nav>
+
+<main class="wrap" id="app"></main>
+
+<footer>ToiletRequest — Tristar Holdings (Pty) Ltd · sakhilentuli704@gmail.com · 084 281 8889</footer>
+
+<div id="toastRoot" class="toast-root" aria-live="polite"></div>
+<div class="modal-backdrop" id="modalBackdrop" hidden>
+  <div class="modal" id="modalBox" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <button type="button" class="modal-close" data-action="close-modal" aria-label="Close">✕</button>
+    <div id="modalContent"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* =========================================================
+     CONFIG — fill these in with your own Supabase project
+     before "Live pilot" mode will work. See
+     README.md for exactly how to get these, and how to enable Anonymous sign-ins (required for the visitor flow's RLS).
+     The anon key is meant to be public; it is safe to ship in
+     this file as long as Row Level Security (see the .sql
+     file) is enabled, which it is.
+  ========================================================= */
+  var SUPABASE_URL = "YOUR_SUPABASE_URL";
+  var SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY";
+
+  var supabaseConfigured = SUPABASE_URL.indexOf("YOUR_SUPABASE") === -1 &&
+    SUPABASE_ANON_KEY.indexOf("YOUR_SUPABASE") === -1 &&
+    SUPABASE_URL.indexOf("http") === 0;
+
+  var sb = supabaseConfigured
+    ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { detectSessionInUrl: true, persistSession: true } })
+    : null;
+
+  /* ============ Shared config ============ */
+  var ISSUES = [
+    { key: 'No toilet paper', emoji: '🧻' },
+    { key: 'No soap', emoji: '🧼' },
+    { key: 'Needs cleaning', emoji: '🧹' },
+    { key: 'Spill', emoji: '💧' },
+    { key: 'Blocked toilet', emoji: '🚽' },
+    { key: 'Other', emoji: '✏️' }
+  ];
+  var NEXT_STATUS = { 'New': 'Acknowledged', 'Acknowledged': 'On my way', 'On my way': 'Resolved' };
+  var NEXT_LABEL = { 'New': 'ACKNOWLEDGE', 'Acknowledged': 'ON MY WAY', 'On my way': 'RESOLVE' };
+
+  /* ============ App state ============ */
+  var state = {
+    tab: 'visitor',
+    session: null,
+    profile: null,
+    activeChannel: null,
+    online: (typeof navigator !== 'undefined' ? navigator.onLine : true)
+  };
+
+  // A "staff" session is a real (magic-link) sign-in. Anonymous sessions
+  // (used only to scope a visitor's own report under RLS) never grant
+  // access to cleaner/management/setup screens.
+  function isStaffSession() {
+    return !!(state.session && state.session.user && !state.session.user.is_anonymous);
+  }
+
+  // Visitors submit/track reports without a magic-link account, but RLS
+  // still needs an auth.uid() to scope "my report" access. This gets a
+  // lightweight anonymous session for that purpose only; it never touches
+  // profiles/cleaner/management data.
+  var visitorSessionPromise = null;
+  async function ensureVisitorSession() {
+    if (isStaffSession()) return state.session; // a signed-in staff member testing the visitor flow keeps their own session
+    if (state.session && state.session.user && state.session.user.is_anonymous) return state.session;
+    if (!visitorSessionPromise) {
+      visitorSessionPromise = sb.auth.signInAnonymously().then(function (res) {
+        if (res.error) throw res.error;
+        state.session = res.data.session;
+        return state.session;
+      }).finally(function () { visitorSessionPromise = null; });
+    }
+    return visitorSessionPromise;
+  }
+
+  var app = document.getElementById('app');
+  var modalBackdrop, modalBox, modalContent, lastFocusedEl;
+
+  /* ============ Utilities ============ */
+  function uuid() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+      var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
+  function statusSlug(s) { return s.replace(/\s+/g, ''); }
+  function statusBadge(s) { return '<span class="status-badge status-' + statusSlug(s) + '">' + s + '</span>'; }
+  function fmtClock(ts) { return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+  function fmtDuration(ms) {
+    var mins = Math.round(ms / 60000);
+    if (mins < 1) return 'under 1 min';
+    if (mins < 60) return mins + ' min';
+    return (mins / 60).toFixed(1) + ' hr';
+  }
+  function relTime(ts) {
+    var mins = Math.floor((Date.now() - ts) / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return mins + ' min ago';
+    var hrs = Math.floor(mins / 60);
+    if (hrs < 24) return hrs + (hrs === 1 ? ' hr ago' : ' hrs ago');
+    return Math.floor(hrs / 24) + ' day(s) ago';
+  }
+  function getLocParam() {
+    var params = new URLSearchParams(window.location.search);
+    return params.get('loc');
+  }
+  function showToast(msg) {
+    var root = document.getElementById('toastRoot');
+    var el = document.createElement('div');
+    el.className = 'toast'; el.setAttribute('role', 'status'); el.textContent = msg;
+    root.appendChild(el);
+    setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 4200);
+  }
+  function beep() {
+    try {
+      var ctx = new (window.AudioContext || window.webkitAudioContext)();
+      var o = ctx.createOscillator(); var g = ctx.createGain();
+      o.type = 'sine'; o.frequency.value = 880;
+      o.connect(g); g.connect(ctx.destination);
+      g.gain.setValueAtTime(0.15, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+      o.start(); o.stop(ctx.currentTime + 0.4);
+    } catch (e) { /* audio not available */ }
+  }
+
+  /* ============ Modal ============ */
+  function openModal(html) {
+    lastFocusedEl = document.activeElement;
+    modalContent.innerHTML = html;
+    modalBackdrop.hidden = false;
+    document.body.style.overflow = 'hidden';
+    var f = modalBox.querySelectorAll('button,[href],input');
+    if (f.length) f[0].focus();
+  }
+  function closeModal() {
+    modalBackdrop.hidden = true;
+    modalContent.innerHTML = '';
+    document.body.style.overflow = '';
+    if (lastFocusedEl && lastFocusedEl.focus) lastFocusedEl.focus();
+  }
+
+  /* ============ Render: top chrome ============ */
+  function renderChrome() {
+    var tabs = document.querySelectorAll('.tab');
+    tabs.forEach(function (t) { t.setAttribute('aria-current', t.getAttribute('data-tab') === state.tab ? 'true' : 'false'); });
+
+    var banner = document.getElementById('modeBanner');
+    if (!state.online) {
+      banner.innerHTML = '<div class="banner error" role="status">Connection lost. Reconnecting…</div>';
+    } else if (!supabaseConfigured) {
+      banner.innerHTML = '<div class="banner error">This app isn\'t configured yet. Add your Supabase project URL and anon key inside this file, then redeploy. See README.md.</div>';
+    } else {
+      banner.innerHTML = '';
+    }
+
+    var signoutSlot = document.getElementById('signoutSlot');
+    if (state.session) {
+      signoutSlot.innerHTML = '<button type="button" class="signout-btn" data-action="sign-out">Sign out</button>';
+    } else {
+      signoutSlot.innerHTML = '';
+    }
+  }
+
+  /* ============ Router ============ */
+  function render() {
+    renderChrome();
+    if (state.tab === 'visitor') renderVisitorTab();
+    else if (state.tab === 'cleaner') renderCleanerTab();
+    else if (state.tab === 'management') renderManagementTab();
+    else if (state.tab === 'setup') renderSetupTab();
+  }
+
+  /* =========================================================
+     VISITOR TAB
+  ========================================================= */
+  function renderVisitorTab() {
+    if (!supabaseConfigured) { app.innerHTML = liveNotConfiguredHTML(); return; }
+    renderVisitorLive();
+  }
+
+  function issueGridHTML(selected) {
+    return ISSUES.map(function (i) {
+      var sel = i.key === selected;
+      return '<button type="button" class="issue-btn' + (sel ? ' is-selected' : '') + '" data-action="pick-issue" data-issue="' + i.key + '"><span class="emoji">' + i.emoji + '</span>' + i.key + '</button>';
+    }).join('');
+  }
+
+  var visitorPendingIssue = null;
+
+  function visitorStatusHTML(r) {
+    var lines = ['<li>' + fmtClock(r.createdAt) + ' — Report received</li>'];
+    if (r.acknowledgedAt) lines.push('<li>' + fmtClock(r.acknowledgedAt) + ' — A cleaner acknowledged it</li>');
+    if (r.onWayAt) lines.push('<li>' + fmtClock(r.onWayAt) + ' — Cleaner is on the way</li>');
+    if (r.resolvedAt) lines.push('<li>' + fmtClock(r.resolvedAt) + ' — Resolved</li>');
+    return '<div class="visitor-card card stack">' +
+      '<h2>Thank you</h2>' +
+      '<p class="muted">Your request has been sent to the cleaning team.</p>' +
+      '<div>' + statusBadge(r.status) + '</div>' +
+      '<p style="font-weight:700; margin:6px 0 0;">' + r.issue + '</p>' +
+      '<p class="muted" style="margin:0;">' + r.location + '</p>' +
+      '<ul class="timeline">' + lines.join('') + '</ul>' +
+      '<button type="button" class="btn btn-ghost btn-block" data-action="reset-visitor-live" style="margin-top:14px;">Report another issue</button>' +
+      '</div>';
+  }
+
+  /* ---- Live visitor ---- */
+  var liveActiveReportChannel = null;
+  var liveCurrentReport = null;
+  var liveCurrentLocation = null;
+
+  function liveNotConfiguredHTML() {
+    return '<div class="card center"><h2>Not configured yet</h2><p class="muted">Add your Supabase project URL and anon key inside this file to connect it to a real database.</p></div>';
+  }
+
+  function noLocationHTML() {
+    return '<div class="card center stack">' +
+      '<h2>No location specified</h2>' +
+      '<p class="muted">This link doesn\'t identify a specific toilet. Please scan the QR code posted inside the facility.</p>' +
+      '</div>';
+  }
+
+  async function renderVisitorLive() {
+    // restore an in-progress report from this browser, if any
+    var savedRaw = null;
+    try { savedRaw = localStorage.getItem('tr_active_report'); } catch (e) { }
+    if (savedRaw) {
+      try {
+        var saved = JSON.parse(savedRaw);
+        await ensureVisitorSession();
+        var fresh = await sb.from('reports').select('*').eq('id', saved.id).single();
+        if (!fresh.error && fresh.data) {
+          liveCurrentReport = mapLiveReport(fresh.data, saved.locationName);
+          app.innerHTML = visitorStatusHTML(liveCurrentReport);
+          subscribeToMyReport(saved.id, saved.locationName);
+          return;
+        }
+      } catch (e) { /* fall through to fresh form */ }
+    }
+
+    var locId = getLocParam();
+    if (!locId) { app.innerHTML = noLocationHTML(); return; }
+
+    app.innerHTML = '<div class="card center"><p class="muted">Loading…</p></div>';
+    try {
+      var res = await sb.from('locations').select('id,name,active,facility_id,facilities(name,active)').eq('id', locId).single();
+      if (res.error || !res.data || !res.data.active || !res.data.facilities || !res.data.facilities.active) {
+        app.innerHTML = '<div class="card center"><h2>Location not recognized</h2><p class="muted">This QR code isn\'t recognized, or this toilet is no longer active. Please tell staff.</p></div>';
+        return;
+      }
+      liveCurrentLocation = res.data;
+      visitorPendingIssue = null;
+      app.innerHTML = '<div class="visitor-card stack">' +
+        '<div class="center"><span class="location-chip">' + res.data.name + '</span></div>' +
+        '<h2 class="center">Report a problem</h2>' +
+        '<div class="issue-grid">' + issueGridHTML(visitorPendingIssue) + '</div>' +
+        '<button type="button" class="btn btn-primary btn-block" id="visitorSubmitBtn" data-action="submit-report-live"' + (visitorPendingIssue ? '' : ' disabled') + '>Report problem</button>' +
+        '</div>';
+    } catch (e) {
+      app.innerHTML = '<div class="card center"><h2>Connection problem</h2><p class="muted">We couldn\'t reach the server. Check your connection and reload.</p></div>';
+    }
+  }
+
+  function refreshVisitorIssueGrid() {
+    var grid = app.querySelector('.issue-grid');
+    var btn = document.getElementById('visitorSubmitBtn');
+    if (!grid || !btn) return;
+    grid.innerHTML = issueGridHTML(visitorPendingIssue);
+    btn.disabled = !visitorPendingIssue;
+  }
+
+  function mapLiveReport(row, locationName) {
+    return {
+      id: row.id, issue: row.issue, location: locationName || (liveCurrentLocation ? liveCurrentLocation.name : ''),
+      status: row.status, createdAt: new Date(row.created_at).getTime(),
+      acknowledgedAt: row.acknowledged_at ? new Date(row.acknowledged_at).getTime() : null,
+      onWayAt: row.on_way_at ? new Date(row.on_way_at).getTime() : null,
+      resolvedAt: row.resolved_at ? new Date(row.resolved_at).getTime() : null
+    };
+  }
+
+  async function submitVisitorReportLive() {
+    if (!visitorPendingIssue || !liveCurrentLocation) return;
+    var btn = document.getElementById('visitorSubmitBtn');
+    btn.disabled = true; btn.textContent = 'Sending…';
+    var submissionKey = uuid();
+    try {
+      await ensureVisitorSession();
+      var ins = await sb.from('reports').insert({
+        facility_id: liveCurrentLocation.facility_id,
+        location_id: liveCurrentLocation.id,
+        issue: visitorPendingIssue,
+        submission_key: submissionKey
+      }).select().single();
+      var row = ins.data;
+      if (ins.error) {
+        if (ins.error.code === '23505') {
+          var existing = await sb.from('reports').select('*').eq('submission_key', submissionKey).single();
+          if (existing.error) throw ins.error;
+          row = existing.data;
+        } else {
+          throw ins.error;
+        }
+      }
+      liveCurrentReport = mapLiveReport(row, liveCurrentLocation.name);
+      try {
+        localStorage.setItem('tr_active_report', JSON.stringify({ id: row.id, locationName: liveCurrentLocation.name }));
+      } catch (e) { }
+      app.innerHTML = visitorStatusHTML(liveCurrentReport);
+      subscribeToMyReport(row.id, liveCurrentLocation.name);
+    } catch (e) {
+      showToast('We couldn\'t send your report. Please try again.');
+      btn.disabled = false; btn.textContent = 'Report problem';
+    }
+  }
+
+  function subscribeToMyReport(reportId, locationName) {
+    if (liveActiveReportChannel) { try { sb.removeChannel(liveActiveReportChannel); } catch (e) { } }
+    liveActiveReportChannel = sb.channel('report-' + reportId)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'reports', filter: 'id=eq.' + reportId }, function (payload) {
+        liveCurrentReport = mapLiveReport(payload.new, locationName);
+        if (state.tab === 'visitor') app.innerHTML = visitorStatusHTML(liveCurrentReport);
+      })
+      .subscribe(function (status) {
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          setTimeout(function () {
+            if (state.online && state.tab === 'visitor' && liveCurrentReport && liveCurrentReport.id === reportId) subscribeToMyReport(reportId, locationName);
+          }, 4000);
+        }
+      });
+  }
+
+  function resetVisitorLive() {
+    try { localStorage.removeItem('tr_active_report'); } catch (e) { }
+    if (liveActiveReportChannel) { try { sb.removeChannel(liveActiveReportChannel); } catch (e) { } liveActiveReportChannel = null; }
+    liveCurrentReport = null;
+    render();
+  }
+
+  /* =========================================================
+     CLEANER TAB
+  ========================================================= */
+  function renderCleanerTab() {
+    if (!supabaseConfigured) { app.innerHTML = liveNotConfiguredHTML(); return; }
+    renderCleanerLive();
+  }
+
+  function reqCardHTML(r) {
+    var isNew = r.status === 'New';
+    var nextLabel = NEXT_LABEL[r.status];
+    var actionBtn = nextLabel
+      ? '<button type="button" class="btn btn-primary big-action-btn" data-action="advance-live" data-id="' + r.id + '" data-from="' + r.status + '">' + nextLabel + '</button>'
+      : '<div class="muted" style="margin-top:14px; font-weight:700;">✓ Resolved</div>';
+    return '<div class="req-card' + (isNew ? ' is-new' : '') + '">' +
+      '<div class="top-row"><div><div class="issue-name">' + r.issue + '</div><div class="loc-name">' + r.location + '</div></div>' + statusBadge(r.status) + '</div>' +
+      '<div class="time-line">Received ' + fmtClock(r.createdAt) + ' · ' + relTime(r.createdAt) + '</div>' +
+      actionBtn +
+      '</div>';
+  }
+
+  var cleanerRealtimeChannel = null;
+
+  async function renderCleanerLive() {
+    if (!isStaffSession()) { app.innerHTML = loginFormHTML(); return; }
+    if (!state.profile) { app.innerHTML = noProfileHTML(); return; }
+    if (['cleaner', 'manager'].indexOf(state.profile.role) === -1) { app.innerHTML = accessDeniedHTML('Cleaner'); return; }
+    await loadAndRenderCleanerReports();
+    subscribeFacilityReports(state.profile.facility_id, function () {
+      if (state.tab === 'cleaner') loadAndRenderCleanerReports();
+      if (state.tab === 'management') loadAndRenderManagement();
+    });
+  }
+
+  async function loadAndRenderCleanerReports() {
+    try {
+      var res = await sb.from('reports')
+        .select('id,issue,status,created_at,acknowledged_at,on_way_at,resolved_at,locations(name)')
+        .eq('facility_id', state.profile.facility_id)
+        .order('created_at', { ascending: true });
+      if (res.error) throw res.error;
+      var rows = (res.data || []).map(function (row) {
+        return {
+          id: row.id, issue: row.issue, location: row.locations ? row.locations.name : '—', status: row.status,
+          createdAt: new Date(row.created_at).getTime(),
+          acknowledgedAt: row.acknowledged_at ? new Date(row.acknowledged_at).getTime() : null,
+          resolvedAt: row.resolved_at ? new Date(row.resolved_at).getTime() : null
+        };
+      });
+      var active = rows.filter(function (r) { return r.status !== 'Resolved'; });
+      var resolved = rows.filter(function (r) { return r.status === 'Resolved'; }).sort(function (a, b) { return b.resolvedAt - a.resolvedAt; });
+
+      var openCount = active.filter(function (r) { return r.status === 'New'; }).length;
+      var badge = document.getElementById('cleanerBadge');
+      if (openCount > 0) { badge.hidden = false; badge.textContent = String(openCount); } else badge.hidden = true;
+
+      var html = '<h2 class="section-title">Cleaner dashboard</h2><p class="section-sub">' + active.length + ' open request(s) at your facility</p>';
+      html += '<button type="button" class="notif-btn" data-action="enable-notifications">🔔 Enable alert sound &amp; notifications</button>';
+      html += '<div class="stack">' + (active.length ? active.map(function (r) { return reqCardHTML(r); }).join('') : '<div class="empty-state">No open requests. 🎉</div>') + '</div>';
+      if (resolved.length) {
+        html += '<h3 style="margin:28px 0 12px; font-size:16px;">Recently resolved</h3><div class="stack">' + resolved.slice(0, 5).map(function (r) { return reqCardHTML(r); }).join('') + '</div>';
+      }
+      app.innerHTML = html;
+    } catch (e) {
+      app.innerHTML = '<div class="card center"><h2>Couldn\'t load requests</h2><p class="muted">Check your connection and try again.</p></div>';
+    }
+  }
+
+  var notificationsEnabled = false;
+  function enableNotifications() {
+    notificationsEnabled = true;
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+    showToast('Alerts enabled for this session.');
+  }
+
+  async function advanceLiveReport(id, fromStatus) {
+    var toStatus = NEXT_STATUS[fromStatus];
+    if (!toStatus) return;
+    var payload = { status: toStatus };
+    if (toStatus === 'Acknowledged') payload.acknowledged_by = state.session.user.id;
+    if (toStatus === 'Resolved') payload.resolved_by = state.session.user.id;
+    try {
+      var res = await sb.from('reports').update(payload).eq('id', id).eq('status', fromStatus).select();
+      if (res.error) throw res.error;
+      if (!res.data || res.data.length === 0) {
+        showToast('This request was already updated by someone else.');
+      } else {
+        showToast('Marked "' + toStatus + '".');
+      }
+      await loadAndRenderCleanerReports();
+    } catch (e) {
+      showToast('Could not update — please try again.');
+    }
+  }
+
+  /* =========================================================
+     MANAGEMENT TAB
+  ========================================================= */
+  function renderManagementTab() {
+    if (!supabaseConfigured) { app.innerHTML = liveNotConfiguredHTML(); return; }
+    renderManagementLive();
+  }
+
+  function statsOverviewHTML(stats, todayCount) {
+    return '<div class="grid-4" style="margin-bottom:26px;">' +
+      '<div class="stat-mini"><div class="num">' + todayCount + '</div><div class="lbl">Received today</div></div>' +
+      '<div class="stat-mini"><div class="num">' + ((stats.counts['New'] || 0) + (stats.counts['Acknowledged'] || 0) + (stats.counts['On my way'] || 0)) + '</div><div class="lbl">Open</div></div>' +
+      '<div class="stat-mini"><div class="num">' + (stats.counts['Resolved'] || 0) + '</div><div class="lbl">Resolved</div></div>' +
+      '<div class="stat-mini"><div class="num">' + stats.total + '</div><div class="lbl">Total</div></div>' +
+      '</div>';
+  }
+
+  function perfSectionHTML(stats) {
+    return '<div class="card" style="margin-bottom:20px;">' +
+      '<h3 style="margin-bottom:14px;">Performance</h3>' +
+      '<div class="list-row"><span>Average response time</span><strong>' + (stats.avgResp != null ? fmtDuration(stats.avgResp) : 'Not enough data yet') + '</strong></div>' +
+      '<div class="list-row"><span>Average resolution time</span><strong>' + (stats.avgRes != null ? fmtDuration(stats.avgRes) : 'Not enough data yet') + '</strong></div>' +
+      '</div>';
+  }
+
+  function freqSectionHTML(title, freq) {
+    var entries = Object.keys(freq).map(function (k) { return [k, freq[k]]; }).sort(function (a, b) { return b[1] - a[1]; });
+    return '<div class="card" style="margin-bottom:20px;">' +
+      '<h3 style="margin-bottom:14px;">' + title + '</h3>' +
+      (entries.length ? entries.map(function (e) { return '<div class="list-row"><span>' + e[0] + '</span><strong>' + e[1] + '</strong></div>'; }).join('') : '<p class="muted">Not enough data yet</p>') +
+      '</div>';
+  }
+
+  async function renderManagementLive() {
+    if (!isStaffSession()) { app.innerHTML = loginFormHTML(); return; }
+    if (!state.profile) { app.innerHTML = noProfileHTML(); return; }
+    if (state.profile.role !== 'manager') { app.innerHTML = accessDeniedHTML('Management'); return; }
+    await loadAndRenderManagement();
+    subscribeFacilityReports(state.profile.facility_id, function () {
+      if (state.tab === 'management') loadAndRenderManagement();
+      if (state.tab === 'cleaner') loadAndRenderCleanerReports();
+    });
+  }
+
+  async function loadAndRenderManagement() {
+    try {
+      var res = await sb.from('reports')
+        .select('id,issue,status,created_at,acknowledged_at,resolved_at,locations(name)')
+        .eq('facility_id', state.profile.facility_id);
+      if (res.error) throw res.error;
+      var rows = (res.data || []).map(function (row) {
+        return {
+          issue: row.issue, location: row.locations ? row.locations.name : '—', status: row.status,
+          createdAt: new Date(row.created_at).getTime(),
+          acknowledgedAt: row.acknowledged_at ? new Date(row.acknowledged_at).getTime() : null,
+          resolvedAt: row.resolved_at ? new Date(row.resolved_at).getTime() : null
+        };
+      });
+      var counts = { New: 0, Acknowledged: 0, 'On my way': 0, Resolved: 0 };
+      rows.forEach(function (r) { counts[r.status] = (counts[r.status] || 0) + 1; });
+      var withAck = rows.filter(function (r) { return r.acknowledgedAt; });
+      var withRes = rows.filter(function (r) { return r.resolvedAt; });
+      var avgResp = withAck.length ? withAck.reduce(function (s, r) { return s + (r.acknowledgedAt - r.createdAt); }, 0) / withAck.length : null;
+      var avgRes = withRes.length ? withRes.reduce(function (s, r) { return s + (r.resolvedAt - r.createdAt); }, 0) / withRes.length : null;
+      var issueFreq = {}; rows.forEach(function (r) { issueFreq[r.issue] = (issueFreq[r.issue] || 0) + 1; });
+      var locFreq = {}; rows.forEach(function (r) { locFreq[r.location] = (locFreq[r.location] || 0) + 1; });
+      var stats = { counts: counts, total: rows.length, avgResp: avgResp, avgRes: avgRes, issueFreq: issueFreq, locFreq: locFreq };
+
+      var todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+      var todayCount = rows.filter(function (r) { return r.createdAt >= todayStart.getTime(); }).length;
+
+      var html = '<h2 class="section-title">Management dashboard</h2>';
+      html += statsOverviewHTML(stats, todayCount);
+      html += perfSectionHTML(stats);
+      html += freqSectionHTML('Recurring problems', issueFreq);
+      html += freqSectionHTML('Problem areas', locFreq);
+      app.innerHTML = html;
+    } catch (e) {
+      app.innerHTML = '<div class="card center"><h2>Couldn\'t load dashboard</h2><p class="muted">Check your connection and try again.</p></div>';
+    }
+  }
+
+  function subscribeFacilityReports(facilityId, onChange) {
+    if (state.activeChannel) { try { sb.removeChannel(state.activeChannel); } catch (e) { } }
+    state.activeChannel = sb.channel('facility-reports-' + facilityId)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reports', filter: 'facility_id=eq.' + facilityId }, function (payload) {
+        if (payload.eventType === 'INSERT') {
+          beep();
+          showToast('🔔 New request: ' + payload.new.issue);
+          if (notificationsEnabled && 'Notification' in window && Notification.permission === 'granted' && document.hidden) {
+            new Notification('New ToiletRequest report', { body: payload.new.issue });
+          }
+        }
+        onChange();
+      })
+      .subscribe(function (status) {
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          setTimeout(function () {
+            if (state.online && (state.tab === 'cleaner' || state.tab === 'management')) subscribeFacilityReports(facilityId, onChange);
+          }, 4000);
+        }
+      });
+  }
+
+  /* =========================================================
+     AUTH
+  ========================================================= */
+  function loginFormHTML() {
+    return '<div class="auth-card">' +
+      '<h2>Staff sign-in</h2>' +
+      '<p class="muted">Enter your work email — we\'ll send a one-time sign-in link.</p>' +
+      '<input type="email" id="authEmail" placeholder="you@company.com" autocomplete="email" />' +
+      '<button type="button" class="btn btn-primary btn-block" data-action="send-magic-link">Send sign-in link</button>' +
+      '<p class="auth-msg" id="authMsg"></p>' +
+      '</div>';
+  }
+  function noProfileHTML() {
+    return '<div class="card center"><h2>Account not set up</h2><p class="muted">You\'re signed in, but your account isn\'t linked to a facility yet. Ask your manager to set your role and facility in Supabase → Table Editor → profiles.</p></div>';
+  }
+  function accessDeniedHTML(area) {
+    return '<div class="card center"><h2>' + area + ' access only</h2><p class="muted">Your account doesn\'t have permission to view this section.</p></div>';
+  }
+
+  async function sendMagicLink() {
+    var input = document.getElementById('authEmail');
+    var msg = document.getElementById('authMsg');
+    var email = input.value.trim();
+    if (!email) { msg.textContent = 'Enter an email address.'; return; }
+    msg.textContent = 'Sending…';
+    try {
+      var res = await sb.auth.signInWithOtp({ email: email, options: { emailRedirectTo: window.location.origin + window.location.pathname } });
+      msg.textContent = res.error ? 'Something went wrong. Please try again.' : 'Check your email for a sign-in link.';
+    } catch (e) {
+      msg.textContent = 'Something went wrong. Please try again.';
+    }
+  }
+
+  async function loadProfile() {
+    try {
+      var res = await sb.from('profiles').select('*').eq('id', state.session.user.id).single();
+      state.profile = res.data || null;
+    } catch (e) { state.profile = null; }
+    render();
+  }
+
+  async function signOut() {
+    try { await sb.auth.signOut(); } catch (e) { }
+    state.session = null; state.profile = null;
+    render();
+  }
+
+  /* =========================================================
+     SETUP TAB
+  ========================================================= */
+  function renderSetupTab() {
+    if (!supabaseConfigured) { app.innerHTML = liveNotConfiguredHTML(); return; }
+    renderSetupLive();
+  }
+
+  async function renderSetupLive() {
+    if (!isStaffSession()) { app.innerHTML = loginFormHTML(); return; }
+    if (!state.profile) { app.innerHTML = noProfileHTML(); return; }
+    if (state.profile.role !== 'manager') { app.innerHTML = accessDeniedHTML('Setup'); return; }
+    app.innerHTML = '<div class="card center"><p class="muted">Loading locations…</p></div>';
+    try {
+      var res = await sb.from('locations').select('id,name,active').eq('facility_id', state.profile.facility_id).order('name');
+      if (res.error) throw res.error;
+      var locations = res.data || [];
+      var html = '<h2 class="section-title">Setup — your QR codes</h2>' +
+        '<p class="section-sub">Print one of these per toilet. Scanning it opens the visitor report form for that exact location — visitors never choose a location manually.</p>';
+      if (!locations.length) {
+        html += '<div class="card center"><p class="muted">No locations yet. Add rows to the <code>locations</code> table in Supabase (Table Editor) with your <code>facility_id</code>: <code>' + state.profile.facility_id + '</code>.</p></div>';
+      } else {
+        html += '<div class="card">' + locations.map(function (l) {
+          var url = window.location.origin + window.location.pathname + '?loc=' + l.id;
+          return '<div class="loc-row">' +
+            '<div class="loc-qr" id="qr-' + l.id + '"></div>' +
+            '<div class="loc-info"><div class="name">' + l.name + (l.active ? '' : ' (inactive)') + '</div><div class="link">' + url + '</div></div>' +
+            '<button type="button" class="btn btn-ghost" data-action="copy-link" data-url="' + url + '">Copy link</button>' +
+            '</div>';
+        }).join('') + '</div>';
+      }
+      html += '<div class="card" style="margin-top:20px;">' +
+        '<h3 style="margin-bottom:12px;">Add a facility, location, or cleaner</h3>' +
+        '<p class="muted">To keep the pilot simple, these are managed directly in Supabase rather than a custom admin screen:</p>' +
+        '<ol class="setup-steps">' +
+        '<li>Supabase dashboard → Table Editor → <code>facilities</code> / <code>locations</code> → insert a row.</li>' +
+        '<li>To add a cleaner: have them sign in once via the Cleaner tab (this creates their <code>profiles</code> row automatically), then edit that row in Table Editor to set <code>role</code> and <code>facility_id</code>.</li>' +
+        '</ol></div>';
+      app.innerHTML = html;
+      locations.forEach(function (l) {
+        var el = document.getElementById('qr-' + l.id);
+        if (el && window.QRCode) {
+          var url = window.location.origin + window.location.pathname + '?loc=' + l.id;
+          new QRCode(el, { text: url, width: 84, height: 84, correctLevel: QRCode.CorrectLevel.M });
+        }
+      });
+    } catch (e) {
+      app.innerHTML = '<div class="card center"><h2>Couldn\'t load setup</h2><p class="muted">Check your connection and try again.</p></div>';
+    }
+  }
+
+  /* =========================================================
+     ACTION DISPATCH
+  ========================================================= */
+  function handleAction(el) {
+    var action = el.getAttribute('data-action');
+    switch (action) {
+      case 'switch-tab': setTab(el.getAttribute('data-tab')); break;
+      case 'pick-issue': visitorPendingIssue = el.getAttribute('data-issue'); refreshVisitorIssueGrid(); break;
+      case 'submit-report-live': submitVisitorReportLive(); break;
+      case 'reset-visitor-live': resetVisitorLive(); break;
+      case 'advance-live': advanceLiveReport(el.getAttribute('data-id'), el.getAttribute('data-from')); break;
+      case 'enable-notifications': enableNotifications(); break;
+      case 'send-magic-link': sendMagicLink(); break;
+      case 'sign-out': signOut(); break;
+      case 'copy-link':
+        var url = el.getAttribute('data-url');
+        if (navigator.clipboard) { navigator.clipboard.writeText(url); showToast('Link copied.'); }
+        break;
+      case 'close-modal': closeModal(); break;
+    }
+  }
+
+  function setTab(tab) {
+    state.tab = tab;
+    render();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  /* =========================================================
+     INIT
+  ========================================================= */
+  async function init() {
+    modalBackdrop = document.getElementById('modalBackdrop');
+    modalBox = document.getElementById('modalBox');
+    modalContent = document.getElementById('modalContent');
+
+    document.addEventListener('click', function (e) {
+      var el = e.target.closest ? e.target.closest('[data-action]') : null;
+      if (el) { handleAction(el); return; }
+      if (e.target === modalBackdrop) closeModal();
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && modalBackdrop && !modalBackdrop.hidden) closeModal();
+    });
+
+    window.addEventListener('offline', function () { state.online = false; renderChrome(); });
+    window.addEventListener('online', function () {
+      state.online = true;
+      renderChrome();
+      // Realtime sockets don't always resume cleanly after a network drop —
+      // the safest fix is to re-render, which re-subscribes the current tab's channel.
+      render();
+    });
+
+    state.tab = 'visitor';
+
+    if (supabaseConfigured) {
+      sb.auth.onAuthStateChange(function (event, session) {
+        state.session = session;
+        if (session && !session.user.is_anonymous) { loadProfile(); } else { state.profile = null; render(); }
+      });
+      try {
+        var got = await sb.auth.getSession();
+        state.session = got.data.session;
+        if (state.session && !state.session.user.is_anonymous) await loadProfile();
+      } catch (e) { }
+      if (window.location.hash.indexOf('access_token') !== -1) {
+        history.replaceState(null, '', window.location.pathname + window.location.search);
+      }
+    }
+
+    render();
+    setInterval(function () { if (state.tab === 'visitor' || state.tab === 'cleaner' || state.tab === 'management') render(); }, 30000);
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
+</script>
+</body>
+</html>
